@@ -99,8 +99,7 @@ app.get("/api/products", (req, res) => {
 // }
 
 async function saveOrder(req, res) {
-  try {
-    const { customerName, customerPhone, items } = req.body || {};
+ = req.body || {};
 
     if (
       !Array.isArray(items) ||
