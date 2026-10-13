@@ -97,7 +97,111 @@ app.get("/api/products", (req, res) => {
 //   "customerPhone": "11999999999",
 //   "items": [{"productId": 1, "quantity": 2}]
 // }
-app.post("/api/orders", async (req, res) => {
+
+async function saveOrder(req, res) {
+  try {
+    const { customerName, customerPhone, items } = req.body || {};
+
+    if (
+      !Array.isArray(items) ||
+      items.length === 0 ||
+      items.length > 50
+    ) {
+      return res.status(400).json({
+        error: "Envie entre 1 e 50 itens no pedido."
+      });
+    }
+
+    if (
+      customerName !== undefined &&
+      (typeof customerName !== "string" || customerName.length > 120)
+    ) {
+      return res.status(400).json({ error: "Nome inválido." });
+    }
+
+    if (
+      customerPhone !== undefined &&
+      (typeof customerPhone !== "string" || customerPhone.length > 30)
+    ) {
+      return res.status(400).json({ error: "Telefone inválido." });
+    }
+
+    let total = 0;
+    const orderItems = [];
+
+    for (const item of items) {
+      const product = products.find(
+        (p) => p.id === item.productId
+      );
+
+      if (
+        !product ||
+        !Number.isInteger(item.quantity) ||
+        item.quantity < 1 ||
+        item.quantity > 100
+      ) {
+        return res.status(400).json({
+          error: "Produto ou quantidade inválida."
+        });
+      }
+
+      total += product.price * item.quantity;
+
+      orderItems.push({
+        productId: product.id,
+        name: product.name,
+        quantity: item.quantity,
+        unitPrice: product.price
+      });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO orders
+        (customer_name, customer_phone, items, total)
+       VALUES ($1, $2, $3::jsonb, $4)
+       RETURNING id, customer_name, customer_phone,
+       items, total, status, created_at`,
+      [
+        customerName?.trim() || null,
+        customerPhone?.trim() || null,
+        JSON.stringify(orderItems),
+        total.toFixed(2)
+      ]
+    );
+
+    return res.status(201).json({
+      message: "Pedido salvo com sucesso!",
+      order: result.rows[0]
+    });
+  } catch (error) {
+    console.error("Erro ao salvar pedido:", error.message);
+
+    return res.status(500).json({
+      error: "Não foi possível salvar o pedido."
+    });
+  }
+}
+
+// Rota normal do site
+app.post("/api/orders", saveOrder);
+
+// Webhook protegido para sistemas externos
+app.post("/api/webhooks/orders", async (req, res) => {
+  const secret = process.env.WEBHOOK_SECRET;
+  const authorization = req.get("authorization") || "";
+
+  if (
+    !secret ||
+    authorization !== `Bearer ${secret}`
+  ) {
+    return res.status(401).json({
+      error: "Webhook não autorizado."
+    });
+  }
+
+  return saveOrder(req, res);
+});
+
   try {
     const { customerName, customerPhone, items } = req.body || {};
 
